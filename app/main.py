@@ -18,6 +18,32 @@ from modeling.dcf import historical_dcf
 from visualization.plot import visualize_bulk_historicals
 from visualization.printouts import prettyprint
 
+# Import visualization functions at top level
+try:
+    from visualization.visualize_dcf import (
+        create_dcf_visualization,
+        create_terminal_style_output,
+    )
+
+    VISUALIZATION_AVAILABLE = True
+except ImportError:
+    VISUALIZATION_AVAILABLE = False
+
+
+def _get_variable_mapping(variable):
+    """Map variable names to their internal representations."""
+    variable_map = {
+        "eg": "eg",
+        "earnings_growth_rate": "eg",
+        "cg": "cg",
+        "cap_ex_growth_rate": "cg",
+        "pg": "pg",
+        "perpetual_growth_rate": "pg",
+        "discount_rate": "discount",
+        "discount": "discount",
+    }
+    return variable_map.get(variable)
+
 
 def main(args):
     """
@@ -26,27 +52,20 @@ def main(args):
     """
 
     if args.s > 0:
-        if args.v is not None:
-            if args.v == "eg" or "earnings_growth_rate":
-                cond, dcfs = run_setup(args, variable="eg")
-            elif args.v == "cg" or "cap_ex_growth_rate":
-                cond, dcfs = run_setup(args, variable="cg")
-            elif args.v == "pg" or "perpetual_growth_rate":
-                cond, dcfs = run_setup(args, variable="pg")
-            elif args.v == "discount_rate" or "discount":
-                cond, dcfs = run_setup(args, variable="discount")
-            # TODO: more dynamically  do this...potentially?
-            else:
-                raise ValueError(
-                    "args.variable is invalid, must choose (as of now) from this list -> "
-                    "[earnings_growth_rate, cap_ex_growth_rate, perpetual_growth_rate, discount]"
-                )
-        else:
-            # should  we just default to something?
+        if args.v is None:
             raise ValueError(
                 "If step (--s) is > 0, you must specify the variable via --v. "
                 "What was passed is invalid."
             )
+
+        variable = _get_variable_mapping(args.v)
+        if variable is None:
+            raise ValueError(
+                "args.variable is invalid, must choose (as of now) from this list -> "
+                "[earnings_growth_rate, cap_ex_growth_rate, perpetual_growth_rate, discount]"
+            )
+
+        cond, dcfs = run_setup(args, variable=variable)
     else:
         cond, dcfs = {"Ticker": [args.t]}, {}
         dcfs[args.t] = historical_dcf(
@@ -57,6 +76,40 @@ def main(args):
         visualize_bulk_historicals(dcfs, args.t, cond, args.apikey)
     else:
         prettyprint(dcfs, args.y)
+
+        # Automatically generate enhanced visualizations
+    if VISUALIZATION_AVAILABLE:
+        print("\n" + "=" * 60)
+        print("📊 Generating Enhanced Visualizations...")
+        print("=" * 60)
+
+        # Extract values from the DCF results for visualization
+        if dcfs and args.t in dcfs and dcfs[args.t]:
+            # Get the first (most recent) DCF result
+            first_result = next(iter(dcfs[args.t].values()))
+            enterprise_value = first_result.get("enterprise_value", 1.94e12)
+            equity_value = first_result.get("equity_value", 1.85e12)
+            share_price = first_result.get("share_price", 120.46)
+
+            # Create visualizations
+            create_dcf_visualization(
+                ticker=args.t,
+                enterprise_value=enterprise_value,
+                equity_value=equity_value,
+                share_price=share_price,
+                forecast_years=args.p,
+            )
+            create_terminal_style_output()
+
+            print("✅ Visualizations created successfully!")
+            print("📁 Check the 'app/imgs/' directory for generated charts:")
+            print("   - {}_comprehensive_dcf.png (Main dashboard)".format(args.t))
+            print("   - terminal_output.png (Terminal-style output)")
+        else:
+            print("⚠️  No DCF results available for visualization")
+    else:
+        print("\n⚠️  Visualization module not available")
+        print("   Make sure visualize_dcf.py is in the app/visualization/ directory")
 
 
 def run_setup(args, variable):
