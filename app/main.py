@@ -14,7 +14,7 @@ future goals:
 import argparse
 import os
 
-from modeling.dcf import historical_DCF
+from modeling.dcf import historical_dcf
 from visualization.plot import visualize_bulk_historicals
 from visualization.printouts import prettyprint
 
@@ -49,7 +49,7 @@ def main(args):
             )
     else:
         cond, dcfs = {"Ticker": [args.t]}, {}
-        dcfs[args.t] = historical_DCF(
+        dcfs[args.t] = historical_dcf(
             args.t, args.y, args.p, args.d, args.eg, args.cg, args.pg, args.i, args.apikey
         )
 
@@ -69,7 +69,7 @@ def run_setup(args, variable):
 
         cond[args.v].append(step)
         vars(args)[variable] = var
-        dcfs[step] = historical_DCF(
+        dcfs[step] = historical_dcf(
             args.t, args.y, args.p, args.d, args.eg, args.cg, args.pg, args.i, args.apikey
         )
 
@@ -137,7 +137,11 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
-        "--d", "--discount_rate", help="discount rate for future cash flow to firm", default=0.1
+        "--d",
+        "--discount_rate",
+        help="discount rate for future cash flow to firm",
+        type=float,
+        default=0.1,
     )
     parser.add_argument(
         "--eg", "--earnings_growth_rate", help="growth in revenue, YoY", type=float, default=0.05
