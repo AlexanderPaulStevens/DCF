@@ -1,4 +1,4 @@
-def prettyprint(dcfs, years):
+def prettyprint(dcfs: dict, years: int) -> None:
     """
     Pretty print-out results of a DCF query.
     Handles formatting for all output variatisons.

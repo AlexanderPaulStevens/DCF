@@ -1,8 +1,11 @@
-Forked from https://github.com/halessi/DCF
+- Author: Alexander Stevens
+- Date: Saturday, July 18, 2025  10:13:00 PM
+- Forked from Hugh Alessi: https://github.com/halessi/DCF
 
 # Financial Forecasting Project
 
 A Python-based Discounted Cash Flow (DCF) analysis tool that automatically fetches financial data and calculates intrinsic stock valuations.
+Uses primitive underlying DCF modeling to compare intrinsic per share price to current share price.
 
 ## What I've Already Done in This Project
 

@@ -2,25 +2,25 @@ import traceback
 from decimal import Decimal
 
 from modeling.data import (
-    get_income_statement,
     get_balance_statement,
     get_cashflow_statement,
     get_ev_statement,
+    get_income_statement,
 )
 
 
 def dcf(
-    ticker,
-    ev_statement,
-    income_statement,
-    balance_statement,
-    cashflow_statement,
-    discount_rate,
-    forecast,
-    earnings_growth_rate,
-    cap_ex_growth_rate,
-    perpetual_growth_rate,
-):
+    ticker: str,
+    ev_statement: dict,
+    income_statement: list,
+    balance_statement: list,
+    cashflow_statement: list,
+    discount_rate: float,
+    forecast: int,
+    earnings_growth_rate: float,
+    cap_ex_growth_rate: float,
+    perpetual_growth_rate: float,
+) -> dict:
     """
     a very basic 2-stage DCF implemented for learning purposes.
     see enterprise_value() for details on arguments.
@@ -60,16 +60,16 @@ def dcf(
 
 
 def historical_dcf(
-    ticker,
-    years,
-    forecast,
-    discount_rate,
-    earnings_growth_rate,
-    cap_ex_growth_rate,
-    perpetual_growth_rate,
-    interval="annual",
-    apikey="",
-):
+    ticker: str,
+    years: int,
+    forecast: int,
+    discount_rate: float,
+    earnings_growth_rate: float,
+    cap_ex_growth_rate: float,
+    perpetual_growth_rate: float,
+    interval: str = "annual",
+    apikey: str = "",
+) -> dict:
     """
     Wrap DCF to fetch DCF values over a historical timeframe, denoted period.
 
@@ -122,7 +122,9 @@ def historical_dcf(
     return dcfs
 
 
-def ul_fcf(ebit, tax_rate, non_cash_charges, cwc, cap_ex):
+def ul_fcf(
+    ebit: float, tax_rate: float, non_cash_charges: float, cwc: float, cap_ex: float
+) -> float:
     """
     Formula to derive unlevered free cash flow to firm. Used in forecasting.
 
@@ -140,7 +142,7 @@ def ul_fcf(ebit, tax_rate, non_cash_charges, cwc, cap_ex):
     return ebit * (1 - tax_rate) + non_cash_charges + cwc + cap_ex
 
 
-def get_discount_rate():
+def get_discount_rate() -> float:
     """
     Calculate the Weighted Average Cost of Capital (WACC) for our company.
     Used for consideration of existing capital structure.
@@ -153,7 +155,7 @@ def get_discount_rate():
     return 0.1  # TODO: implement
 
 
-def equity_value(enterprise_value, enterprise_value_statement):
+def equity_value(enterprise_value: float, enterprise_value_statement: dict) -> tuple[float, float]:
     """
     Given an enterprise value, return the equity value by adjusting for cash/cash equivs.
     and total debt.
@@ -179,15 +181,15 @@ def equity_value(enterprise_value, enterprise_value_statement):
 
 
 def enterprise_value(
-    income_statement,
-    cashflow_statement,
-    balance_statement,
-    period,
-    discount_rate,
-    earnings_growth_rate,
-    cap_ex_growth_rate,
-    perpetual_growth_rate,
-):
+    income_statement: list,
+    cashflow_statement: list,
+    balance_statement: list,
+    period: int,
+    discount_rate: float,
+    earnings_growth_rate: float,
+    cap_ex_growth_rate: float,
+    perpetual_growth_rate: float,
+) -> float:
     """
     Calculate enterprise value by NPV of explicit _period_ free cash flows + NPV of terminal value,
     both discounted by W.A.C.C.

@@ -15,7 +15,7 @@ sns.set()
 sns.set_context("paper")
 
 
-def visualize(dcf_prices, ticker, condition, apikey):
+def visualize(dcf_prices: dict, ticker: str, condition: dict, apikey: str) -> None:
     """
     2d plot comparing dcf-forecasted per share price with historical share price.
     """
@@ -48,7 +48,7 @@ def visualize(dcf_prices, ticker, condition, apikey):
     plt.show()
 
 
-def visualize_bulk_historicals(dcfs, ticker, condition, apikey):
+def visualize_bulk_historicals(dcfs: dict, ticker: str, condition: dict, apikey: str) -> None:
     """
     multiple 2d plot comparing historical DCFS of different growth
     assumption conditions
@@ -100,7 +100,7 @@ def visualize_bulk_historicals(dcfs, ticker, condition, apikey):
     plt.show()
 
 
-def visualize_historicals(dcfs):
+def visualize_historicals(dcfs: dict) -> None:
     """
     2d plot comparing dcf history to share price history
     """

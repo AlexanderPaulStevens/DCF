@@ -1,195 +1,213 @@
 """
-Utilizing financialmodelingprep.com for their free-endpoint API
-to gather company financials.
+Financial data fetching utilities using financialmodelingprep.com API.
 
 NOTE: Some code taken directly from their documentation. See: https://financialmodelingprep.com/developer/docs/.
 """
 
-from urllib.request import urlopen, URLError
 import json
 import traceback
+from typing import Dict, List, Optional
+from urllib.request import URLError, urlopen
+
+from config import config
+from custom_types import (
+    APIResponse,
+    BalanceStatement,
+    CashFlowStatement,
+    EnterpriseValueStatement,
+    IncomeStatement,
+)
+from exceptions import APIError, DataFetchError, InvalidParameterError
 
 
-def get_api_url(requested_data, ticker, period, apikey):
-    if period == "annual":
-        url = "https://financialmodelingprep.com/api/v3/{requested_data}/{ticker}?apikey={apikey}".format(
-            requested_data=requested_data, ticker=ticker, apikey=apikey
-        )
-    elif period == "quarter":
-        url = "https://financialmodelingprep.com/api/v3/{requested_data}/{ticker}?period=quarter&apikey={apikey}".format(
-            requested_data=requested_data, ticker=ticker, apikey=apikey
-        )
-    else:
-        raise ValueError("invalid period " + str(period))
-    return url
+class FinancialDataFetcher:
+    """Handles fetching financial data from the API."""
 
+    def __init__(self, api_key: Optional[str] = None) -> None:
+        self.api_key = api_key or config.api.api_key
+        if not self.api_key:
+            raise InvalidParameterError("API key is required")
 
-def get_jsonparsed_data(url):
-    """
-    Fetch url, return parsed json.
+    def _build_url(self, endpoint: str, ticker: str, period: str = "annual") -> str:
+        """Build API URL for the given endpoint and parameters."""
+        if period not in ["annual", "quarter"]:
+            raise InvalidParameterError(f"Invalid period: {period}")
 
-    args:
-        url: the url to fetch.
+        base_url = config.api.base_url
+        if period == "annual":
+            return f"{base_url}/{endpoint}/{ticker}?apikey={self.api_key}"
+        else:
+            return f"{base_url}/{endpoint}/{ticker}?period=quarter&apikey={self.api_key}"
 
-    returns:
-        parsed json
-    """
-    try:
-        response = urlopen(url)
-    except URLError as e:
-        print(f"Error retrieving {url}:")
+    def _fetch_json_data(self, url: str) -> APIResponse:
+        """Fetch and parse JSON data from the given URL."""
         try:
-            print("\t%s" % e.read().decode())
-        except AttributeError:
-            pass
-        raise
-    data = response.read().decode("utf-8")
-    try:
-        json_data = json.loads(data)
-    except json.JSONDecodeError as e:
-        print(f"JSON decode error for {url}: {e}")
-        raise
-    if "Error Message" in json_data:
-        raise ValueError(
-            f"Error while requesting data from '{url}'. "
-            f"Error Message: '{json_data['Error Message']}'."
-        )
-    return json_data
-
-
-def get_ev_statement(ticker, period="annual", apikey=""):
-    """
-    Fetch EV statement, with details like total shares outstanding, from FMP.com
-
-    args:
-        ticker: company tickerr
-    returns:
-        parsed EV statement
-    """
-    url = get_api_url("enterprise-value", ticker=ticker, period=period, apikey=apikey)
-    return get_jsonparsed_data(url)
-
-
-#! TODO: maybe combine these with argument flag for which statement, seems pretty redundant tbh
-def get_income_statement(ticker, period="annual", apikey=""):
-    """
-    Fetch income statement.
-
-    args:
-        ticker: company ticker.
-        period: annual default, can fetch quarterly if specified.
-
-    returns:
-        parsed company's income statement
-    """
-    url = get_api_url("financials/income-statement", ticker=ticker, period=period, apikey=apikey)
-    return get_jsonparsed_data(url)
-
-
-def get_cashflow_statement(ticker, period="annual", apikey=""):
-    """
-    Fetch cashflow statement.
-
-    args:
-        ticker: company ticker.
-        period: annual default, can fetch quarterly if specified.
-
-    returns:
-        parsed company's cashflow statement
-    """
-    url = get_api_url("financials/cash-flow-statement", ticker=ticker, period=period, apikey=apikey)
-    return get_jsonparsed_data(url)
-
-
-def get_balance_statement(ticker, period="annual", apikey=""):
-    """
-    Fetch balance sheet statement.
-
-    args:
-        ticker: company ticker.
-        period: annual default, can fetch quarterly if specified.
-
-    returns:
-        parsed company's balance sheet statement
-    """
-    url = get_api_url(
-        "financials/balance-sheet-statement", ticker=ticker, period=period, apikey=apikey
-    )
-    return get_jsonparsed_data(url)
-
-
-def get_stock_price(ticker, apikey=""):
-    """
-    Fetches the stock price for a ticker
-
-    args:
-        ticker
-
-    returns:
-        {'symbol': ticker, 'price': price}
-    """
-    url = "https://financialmodelingprep.com/api/v3/stock/real-time-price/{ticker}?apikey={apikey}".format(
-        ticker=ticker, apikey=apikey
-    )
-    return get_jsonparsed_data(url)
-
-
-def get_batch_stock_prices(tickers, apikey=""):
-    """
-    Fetch the stock prices for a list of tickers.
-
-    args:
-        tickers: a list of  tickers........
-
-    returns:
-        dict of {'ticker':  price}
-    """
-    prices = {}
-    for ticker in tickers:
-        prices[ticker] = get_stock_price(ticker=ticker, apikey=apikey)["price"]
-
-    return prices
-
-
-def get_historical_share_prices(ticker, dates, apikey=""):
-    """
-    Fetch the stock price for a ticker at the dates listed.
-
-    args:
-        ticker: a ticker.
-        dates: a list of dates from which to fetch close price.
-
-    returns:
-        {'date': price, ...}
-    """
-    prices = {}
-    for date in dates:
-        try:
-            date_start, date_end = date[0:8] + str(int(date[8:]) - 2), date
-        except ValueError:
-            print(f"Error parsing '{date}' to date.")
-            print(traceback.format_exc())
-            continue
-        url = "https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?from={date_start}&to={date_end}&apikey={apikey}".format(
-            ticker=ticker, date_start=date_start, date_end=date_end, apikey=apikey
-        )
-        try:
-            prices[date_end] = get_jsonparsed_data(url)["historical"][0]["close"]
-        except IndexError:
-            # RIP nested try catch. So many issues with dates—just try a bunch and get within
-            # range of earnings release.
+            # Validate URL scheme for security
+            if not url.startswith(("http://", "https://")):
+                raise DataFetchError(f"Invalid URL scheme: {url}")
+            response = urlopen(url)  # noqa: S310
+        except URLError as e:
+            error_msg = f"Error retrieving {url}"
             try:
-                prices[date_start] = get_jsonparsed_data(url)["historical"][0]["close"]
-            except IndexError:
-                print(date + " ", get_jsonparsed_data(url))
+                error_msg += f": {e.read().decode()}"
+            except AttributeError:
+                pass
+            raise DataFetchError(error_msg) from e
 
-    return prices
+        try:
+            data = response.read().decode("utf-8")
+            json_data = json.loads(data)
+        except json.JSONDecodeError as e:
+            raise DataFetchError(f"JSON decode error for {url}: {e}") from e
+
+        if "Error Message" in json_data:
+            raise APIError(f"API Error for '{url}': {json_data['Error Message']}")
+
+        return json_data
+
+    def get_enterprise_value_statement(
+        self, ticker: str, period: str = "annual"
+    ) -> EnterpriseValueStatement:
+        """Fetch enterprise value statement."""
+        url = self._build_url("enterprise-value", ticker, period)
+        data = self._fetch_json_data(url)
+        return EnterpriseValueStatement(ticker=ticker, period=period, data=data)
+
+    def get_income_statement(self, ticker: str, period: str = "annual") -> IncomeStatement:
+        """Fetch income statement."""
+        url = self._build_url("financials/income-statement", ticker, period)
+        data = self._fetch_json_data(url)
+        return IncomeStatement(ticker=ticker, period=period, data=data.get("financials", []))
+
+    def get_cashflow_statement(self, ticker: str, period: str = "annual") -> CashFlowStatement:
+        """Fetch cash flow statement."""
+        url = self._build_url("financials/cash-flow-statement", ticker, period)
+        data = self._fetch_json_data(url)
+        return CashFlowStatement(ticker=ticker, period=period, data=data.get("financials", []))
+
+    def get_balance_statement(self, ticker: str, period: str = "annual") -> BalanceStatement:
+        """Fetch balance sheet statement."""
+        url = self._build_url("financials/balance-sheet-statement", ticker, period)
+        data = self._fetch_json_data(url)
+        return BalanceStatement(ticker=ticker, period=period, data=data.get("financials", []))
+
+    def get_stock_price(self, ticker: str) -> Dict[str, float]:
+        """Fetch current stock price."""
+        url = f"{config.api.base_url}/stock/real-time-price/{ticker}?apikey={self.api_key}"
+        data = self._fetch_json_data(url)
+        return {"symbol": ticker, "price": data["price"]}
+
+    def get_batch_stock_prices(self, tickers: List[str]) -> Dict[str, float]:
+        """Fetch stock prices for multiple tickers."""
+        prices = {}
+        for ticker in tickers:
+            try:
+                price_data = self.get_stock_price(ticker)
+                prices[ticker] = price_data["price"]
+            except (APIError, DataFetchError) as e:
+                print(f"Error fetching price for {ticker}: {e}")
+                continue
+            except (ValueError, TypeError, AttributeError) as e:
+                print(f"Unexpected error fetching price for {ticker}: {e}")
+                continue
+        return prices
+
+    def get_historical_share_prices(self, ticker: str, dates: List[str]) -> Dict[str, float]:
+        """Fetch historical stock prices for given dates."""
+        prices = {}
+        for date in dates:
+            try:
+                # Calculate date range for API call
+                date_start = date[0:8] + str(int(date[8:]) - 2)
+                date_end = date
+
+                url = (
+                    f"{config.api.base_url}/historical-price-full/{ticker}"
+                    f"?from={date_start}&to={date_end}&apikey={self.api_key}"
+                )
+
+                data = self._fetch_json_data(url)
+                prices[date_end] = data["historical"][0]["close"]
+
+            except (ValueError, IndexError) as e:
+                print(f"Error parsing date '{date}': {e}")
+                print(traceback.format_exc())
+                continue
+            except (APIError, DataFetchError) as e:
+                print(f"Error fetching historical price for {date}: {e}")
+                continue
+            except (ValueError, TypeError, AttributeError) as e:
+                print(f"Unexpected error fetching historical price for {date}: {e}")
+                continue
+
+        return prices
+
+
+# Legacy functions for backward compatibility
+def get_api_url(requested_data: str, ticker: str, period: str, apikey: str) -> str:
+    """Legacy function - use FinancialDataFetcher instead."""
+    fetcher = FinancialDataFetcher(apikey)
+    return fetcher._build_url(requested_data, ticker, period)
+
+
+def get_jsonparsed_data(url: str) -> APIResponse:
+    """Legacy function - use FinancialDataFetcher instead."""
+    fetcher = FinancialDataFetcher()
+    return fetcher._fetch_json_data(url)
+
+
+def get_ev_statement(ticker: str, period: str = "annual", apikey: str = "") -> APIResponse:
+    """Legacy function - use FinancialDataFetcher instead."""
+    fetcher = FinancialDataFetcher(apikey)
+    return fetcher.get_enterprise_value_statement(ticker, period).data
+
+
+def get_income_statement(ticker: str, period: str = "annual", apikey: str = "") -> APIResponse:
+    """Legacy function - use FinancialDataFetcher instead."""
+    fetcher = FinancialDataFetcher(apikey)
+    return {"financials": fetcher.get_income_statement(ticker, period).data}
+
+
+def get_cashflow_statement(ticker: str, period: str = "annual", apikey: str = "") -> APIResponse:
+    """Legacy function - use FinancialDataFetcher instead."""
+    fetcher = FinancialDataFetcher(apikey)
+    return {"financials": fetcher.get_cashflow_statement(ticker, period).data}
+
+
+def get_balance_statement(ticker: str, period: str = "annual", apikey: str = "") -> APIResponse:
+    """Legacy function - use FinancialDataFetcher instead."""
+    fetcher = FinancialDataFetcher(apikey)
+    return {"financials": fetcher.get_balance_statement(ticker, period).data}
+
+
+def get_stock_price(ticker: str, apikey: str = "") -> Dict[str, float]:
+    """Legacy function - use FinancialDataFetcher instead."""
+    fetcher = FinancialDataFetcher(apikey)
+    return fetcher.get_stock_price(ticker)
+
+
+def get_batch_stock_prices(tickers: List[str], apikey: str = "") -> Dict[str, float]:
+    """Legacy function - use FinancialDataFetcher instead."""
+    fetcher = FinancialDataFetcher(apikey)
+    return fetcher.get_batch_stock_prices(tickers)
+
+
+def get_historical_share_prices(
+    ticker: str, dates: List[str], apikey: str = ""
+) -> Dict[str, float]:
+    """Legacy function - use FinancialDataFetcher instead."""
+    fetcher = FinancialDataFetcher(apikey)
+    return fetcher.get_historical_share_prices(ticker, dates)
 
 
 if __name__ == "__main__":
-    """ quick test, to use run data.py directly """
-
-    ticker = "AAPL"
-    apikey = "<DEMO>"
-    data = get_cashflow_statement(ticker=ticker, apikey=apikey)
-    print(data)
+    """Quick test - run data.py directly."""
+    try:
+        fetcher = FinancialDataFetcher()
+        data = fetcher.get_cashflow_statement("AAPL")
+        print("Successfully fetched cash flow statement for AAPL")
+        print(f"Number of periods: {len(data.data)}")
+    except (APIError, DataFetchError) as e:
+        print(f"API Error: {e}")
+    except (ValueError, TypeError, AttributeError) as e:
+        print(f"Unexpected error: {e}")
