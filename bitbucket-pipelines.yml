@@ -1,0 +1,23 @@
+image: python:3.10
+pipelines:
+  default:
+    - parallel:
+        - step:
+            name: bandit
+            caches:
+              - pip
+            script:
+              - pip install $(cat requirements.txt | grep bandit)
+              - bandit -r .
+        - step:
+            name: ruff
+            caches:
+              - pip
+            script:
+              - pip install $(cat requirements.txt | grep ruff)
+              - ruff check . --config ruff.toml
+        - step:
+            name: license_check
+            script:
+              - pip install $(cat requirements.txt | grep liccheck)
+              - ./run_license_check.sh --modules-file python-modules
