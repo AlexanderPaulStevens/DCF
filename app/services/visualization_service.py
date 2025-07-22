@@ -9,9 +9,10 @@ import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from config import config
-from custom_types import DCFResult, DCFResults, VisualizationData
-from exceptions import VisualizationError
+
+from app.config import config
+from app.custom_types import DCFResult, DCFResults, VisualizationData
+from app.exceptions import VisualizationError
 
 
 class VisualizationService:
@@ -25,6 +26,42 @@ class VisualizationService:
         """Set up the plotting style and configuration."""
         plt.style.use(config.visualization.style)
         sns.set_palette(config.visualization.color_palette)
+
+    def generate_enhanced_visualizations(
+        self, ticker: str, dcf_results: DCFResults, forecast_years: int
+    ) -> None:
+        """
+        Generate enhanced visualizations with user feedback.
+
+        Args:
+            ticker: Company ticker symbol
+            dcf_results: DCF calculation results
+            forecast_years: Number of forecast years
+
+        Raises:
+            VisualizationError: If visualization generation fails
+        """
+        print("\n" + "=" * 60)
+        print("Generating Enhanced Visualizations...")
+        print("=" * 60)
+
+        if not dcf_results or ticker not in dcf_results or not dcf_results[ticker]:
+            print("Warning: No DCF results available for visualization")
+            return
+
+        try:
+            # Create visualizations
+            self.create_comprehensive_visualization(ticker, dcf_results[ticker], forecast_years)
+            self.create_terminal_style_output(ticker, dcf_results[ticker], forecast_years)
+
+            print("Visualizations created successfully!")
+            print("Check the 'app/imgs/' directory for generated charts:")
+            print(f"   - {ticker}_comprehensive_dcf.png (Main dashboard)")
+            print("   - terminal_output.png (Terminal-style output)")
+
+        except Exception as e:
+            print(f"Visualization error: {e}")
+            raise VisualizationError(f"Failed to generate visualizations: {e}") from e
 
     def create_comprehensive_visualization(
         self, ticker: str, dcf_results: DCFResults, forecast_years: int

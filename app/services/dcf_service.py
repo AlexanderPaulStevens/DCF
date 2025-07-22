@@ -6,22 +6,23 @@ import traceback
 from decimal import Decimal
 from typing import Dict, Optional, Tuple
 
-from custom_types import DCFParameters, DCFResult, DCFResults
-from exceptions import APIError, DataFetchError, DCFCalculationError
-from modeling.data import FinancialDataFetcher
+from app.custom_types import DCFParameters, DCFResult, DCFResults
+from app.exceptions import APIError, DataFetchError, DCFCalculationError
+from app.modeling.data import FinancialDataFetcher
 
 
 class DCFService:
     """Service for handling DCF calculations."""
 
-    def __init__(self, api_key: Optional[str] = None) -> None:
+    def __init__(self, api_key: Optional[str] = None, use_cache: bool = True) -> None:
         """
         Initialize the DCF service.
 
         Args:
             api_key: Optional API key for financial data services
+            use_cache: Whether to use caching (default: True)
         """
-        self.data_fetcher = FinancialDataFetcher(api_key)
+        self.data_fetcher = FinancialDataFetcher(api_key, use_cache)
 
     def calculate_dcf(
         self,

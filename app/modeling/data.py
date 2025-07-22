@@ -9,24 +9,35 @@ import traceback
 from typing import Dict, List, Optional
 from urllib.request import URLError, urlopen
 
-from config import config
-from custom_types import (
+from app.config import config
+from app.custom_types import (
     APIResponse,
     BalanceStatement,
     CashFlowStatement,
     EnterpriseValueStatement,
     IncomeStatement,
 )
-from exceptions import APIError, DataFetchError, InvalidParameterError
+from app.exceptions import APIError, DataFetchError, InvalidParameterError
+from app.services.cache_service import CacheService
 
 
 class FinancialDataFetcher:
-    """Handles fetching financial data from the API."""
+    """Handles fetching financial data from the API with caching."""
 
-    def __init__(self, api_key: Optional[str] = None) -> None:
+    def __init__(self, api_key: Optional[str] = None, use_cache: bool = True) -> None:
+        """
+        Initialize the data fetcher.
+
+        Args:
+            api_key: API key for financial data services
+            use_cache: Whether to use caching (default: True)
+        """
         self.api_key = api_key or config.api.api_key
         if not self.api_key:
             raise InvalidParameterError("API key is required")
+
+        self.use_cache = use_cache
+        self.cache_service = CacheService() if use_cache else None
 
     def _build_url(self, endpoint: str, ticker: str, period: str = "annual") -> str:
         """Build API URL for the given endpoint and parameters."""
@@ -65,30 +76,61 @@ class FinancialDataFetcher:
 
         return json_data
 
+    def _get_cached_or_fetch(
+        self, ticker: str, data_type: str, period: str = "annual"
+    ) -> APIResponse:
+        """
+        Get data from cache if available, otherwise fetch from API.
+
+        Args:
+            ticker: Company ticker symbol
+            data_type: Type of financial data
+            period: Data period ('annual' or 'quarter')
+
+        Returns:
+            Financial data from cache or API
+        """
+        if self.use_cache and self.cache_service:
+            # Try to load from cache first
+            cached_data = self.cache_service.load_data(ticker, data_type, period)
+            if cached_data is not None:
+                print(f"Using cached data for {ticker} {data_type}")
+                return cached_data
+
+        # Fetch from API
+        url = self._build_url(data_type, ticker, period)
+        data = self._fetch_json_data(url)
+
+        # Save to cache if caching is enabled
+        if self.use_cache and self.cache_service:
+            try:
+                self.cache_service.save_data(ticker, data_type, data, period)
+                print(f"Cached data for {ticker} {data_type}")
+            except (OSError, IOError, ValueError, TypeError) as e:
+                print(f"Warning: Failed to cache data for {ticker}: {e}")
+
+        return data
+
     def get_enterprise_value_statement(
         self, ticker: str, period: str = "annual"
     ) -> EnterpriseValueStatement:
         """Fetch enterprise value statement."""
-        url = self._build_url("enterprise-value", ticker, period)
-        data = self._fetch_json_data(url)
+        data = self._get_cached_or_fetch(ticker, "enterprise-value", period)
         return EnterpriseValueStatement(ticker=ticker, period=period, data=data)
 
     def get_income_statement(self, ticker: str, period: str = "annual") -> IncomeStatement:
         """Fetch income statement."""
-        url = self._build_url("financials/income-statement", ticker, period)
-        data = self._fetch_json_data(url)
+        data = self._get_cached_or_fetch(ticker, "financials/income-statement", period)
         return IncomeStatement(ticker=ticker, period=period, data=data.get("financials", []))
 
     def get_cashflow_statement(self, ticker: str, period: str = "annual") -> CashFlowStatement:
         """Fetch cash flow statement."""
-        url = self._build_url("financials/cash-flow-statement", ticker, period)
-        data = self._fetch_json_data(url)
+        data = self._get_cached_or_fetch(ticker, "financials/cash-flow-statement", period)
         return CashFlowStatement(ticker=ticker, period=period, data=data.get("financials", []))
 
     def get_balance_statement(self, ticker: str, period: str = "annual") -> BalanceStatement:
         """Fetch balance sheet statement."""
-        url = self._build_url("financials/balance-sheet-statement", ticker, period)
-        data = self._fetch_json_data(url)
+        data = self._get_cached_or_fetch(ticker, "financials/balance-sheet-statement", period)
         return BalanceStatement(ticker=ticker, period=period, data=data.get("financials", []))
 
     def get_stock_price(self, ticker: str) -> Dict[str, float]:
@@ -141,6 +183,28 @@ class FinancialDataFetcher:
                 continue
 
         return prices
+
+    def clear_cache(self, ticker: Optional[str] = None, data_type: Optional[str] = None) -> None:
+        """
+        Clear cached data.
+
+        Args:
+            ticker: Specific ticker to clear (if None, clears all)
+            data_type: Specific data type to clear (if None, clears all)
+        """
+        if self.cache_service:
+            self.cache_service.clear_cache(ticker, data_type)
+
+    def get_cache_info(self) -> Dict:
+        """
+        Get information about cached data.
+
+        Returns:
+            Dictionary with cache statistics
+        """
+        if self.cache_service:
+            return self.cache_service.get_cache_info()
+        return {"error": "Caching is disabled"}
 
 
 # Legacy functions for backward compatibility
