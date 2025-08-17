@@ -60,16 +60,16 @@ apikey                  | (Free) API Key to access financial data from [financia
 
 If we want to examine historical DCFS for $AAPL, we can run:
 
-```python main.py --t AAPL --i 'annual' --y 3 --eg .15 --steps 2 --s 0.1 --v eg --apikey <secret>```
+```python main.py --ticker AAPL --interval 'annual' --years 3 --earnings_growth_rate .15 --steps 2 --step_increase 0.1 --variable earnings_growth_rate --apikey <secret>```
 
 or via:
 ```
 export APIKEY=<secret>
-python main.py --t AAPL --i 'annual' --y 3 --eg .15 --steps 2 --s 0.1 --v eg
+python main.py --ticker AAPL --interval 'annual' --years 3 --earnings_growth_rate .15 --steps 2 --step_increase 0.1 --variable earnings_growth_rate
 ```
 
 
-This pulls the financials for AAPL for each year 3 years (--y) back to calculate 12 DCFs (3 years * 4 quarters), starting at a base earnings growth of 15% (--eg) and increasing for two steps (--steps) by 10% (--s), with --v specifying that earnings growth is the variable we want to increment.
+This pulls the financials for AAPL for each year 3 years (--years) back to calculate 12 DCFs (3 years * 4 quarters), starting at a base earnings growth of 15% (--earnings_growth_rate) and increasing for two steps (--steps) by 10% (--step_increase), with --variable specifying that earnings growth is the variable we want to increment.
 
 Terminal outputs some details just for us to keep an eye on:
 

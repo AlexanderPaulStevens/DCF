@@ -4,3 +4,18 @@ _config.yml
 
 # env
 .env
+
+# venv
+.venv/
+
+# ruff cache
+.ruff_cache/
+
+# extra
+extra/
+
+app/cache
+
+app/imgs
+
+.cursorrules

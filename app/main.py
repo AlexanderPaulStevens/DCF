@@ -1,164 +1,80 @@
 """
-author: Hugh Alessi
-date: Saturday, July 27, 2019  8:25:00 PM
-description: Use primitive underlying DCF modeling to compare intrinsic per share price
-    to current share price.
+Financial Forecasting Application.
 
-future goals:
-    -- Formalize sensitivity analysis.
-    -- More robust revenue forecasts in FCF.
-    -- EBITA multiples terminal value calculation.
-    -- More to be added.
+This module provides the main entry point for the financial forecasting application
+that performs DCF (Discounted Cash Flow) analysis on publicly traded companies.
+
+What is DCF Analysis?
+=====================
+
+DCF analysis values companies by estimating the present value of their future cash flows.
+It's based on the principle that a company's value today is the sum of all its future
+cash flows, discounted back to present value.
+
+Required Parameters:
+-------------------
+- **--ticker**: Company stock symbol (e.g., AAPL, MSFT, GOOGL)
+- **--apikey**: Financial Modeling Prep API key (or set $APIKEY environment variable)
+
+Key Optional Parameters:
+-----------------------
+- **--period**: Years to forecast (default: 5)
+- **--discount_rate**: Discount rate for future cash flows (default: 0.1)
+- **--earnings_growth_rate**: Assumed earnings growth rate (default: 0.05)
+
+Output:
+--------
+- Terminal output with key valuation metrics
+- Generated charts saved to 'app/imgs/' directory
+- Comprehensive DCF dashboard visualization
+
+Data Sources:
+-------------
+- Financial statements from Financial Modeling Prep API
 """
 
-import argparse
-import os
+import logging
 
-from modeling.dcf import historical_dcf
-from visualization.plot import visualize_bulk_historicals
-from visualization.printouts import prettyprint
+from app.argument_parser import create_argument_parser, show_cache_info
+from app.services.application_service import ApplicationService
+from app.services.cache_service import CacheService
+from app.services.validation_service import ValidationService
 
-
-def main(args):
-    """
-    although the if statements are less than desirable, it allows rapid exploration of
-    historical or present DCF values for either a single or list of tickers.
-    """
-
-    if args.s > 0:
-        if args.v is not None:
-            if args.v == "eg" or "earnings_growth_rate":
-                cond, dcfs = run_setup(args, variable="eg")
-            elif args.v == "cg" or "cap_ex_growth_rate":
-                cond, dcfs = run_setup(args, variable="cg")
-            elif args.v == "pg" or "perpetual_growth_rate":
-                cond, dcfs = run_setup(args, variable="pg")
-            elif args.v == "discount_rate" or "discount":
-                cond, dcfs = run_setup(args, variable="discount")
-            # TODO: more dynamically  do this...potentially?
-            else:
-                raise ValueError(
-                    "args.variable is invalid, must choose (as of now) from this list -> "
-                    "[earnings_growth_rate, cap_ex_growth_rate, perpetual_growth_rate, discount]"
-                )
-        else:
-            # should  we just default to something?
-            raise ValueError(
-                "If step (--s) is > 0, you must specify the variable via --v. "
-                "What was passed is invalid."
-            )
-    else:
-        cond, dcfs = {"Ticker": [args.t]}, {}
-        dcfs[args.t] = historical_dcf(
-            args.t, args.y, args.p, args.d, args.eg, args.cg, args.pg, args.i, args.apikey
-        )
-
-    if args.y > 1:  # can't graph single timepoint very well....
-        visualize_bulk_historicals(dcfs, args.t, cond, args.apikey)
-    else:
-        prettyprint(dcfs, args.y)
+# Configure logging for the main application
+logger = logging.getLogger(__name__)
 
 
-def run_setup(args, variable):
-    dcfs, cond = {}, {args.v: []}
+def main() -> None:
+    """Main entry point for the application."""
+    # Configure basic logging for the application
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
-    for increment in range(1, int(args.steps) + 1):  # default to 5 steps?
-        # this should probably be wrapped in another function..
-        var = vars(args)[variable] * (1 + (args.s * increment))
-        step = "{}: {}".format(args.v, str(var)[0:4])
+    args = create_argument_parser()
 
-        cond[args.v].append(step)
-        vars(args)[variable] = var
-        dcfs[step] = historical_dcf(
-            args.t, args.y, args.p, args.d, args.eg, args.cg, args.pg, args.i, args.apikey
-        )
+    # Handle cache management commands
+    if args.cache_info:
+        show_cache_info()
+        return
 
-    return cond, dcfs
+    # Handle cache clearing
+    if args.clear_cache:
+        logger.info("Clearing cache...")
+        cache_service = CacheService()
+        cache_service.clear_cache()
+        logger.info("Cache cleared.")
 
+    # Create services
+    validation_service = ValidationService()
 
-def multiple_tickers():
-    """
-    can be called from main to spawn dcf/historical dcfs for
-    a list of tickers TODO: fully fix
-    """
-    # if args.ts is not None:
-    #     """list to forecast"""
-    #     if args.y > 1:
-    #         for ticker in args.ts:
-    #             dcfs[ticker] =  historical_DCF(args.t, args.y, args.p, args.eg, args.cg, args.pgr)
-    #     else:
-    #         for ticker in args.tss:
-    #             dcfs[ticker] = DCF(args.t, args.p, args.eg, args.cg, args.pgr)
-    # elif args.t is not None:
-    #     """ single ticker"""
-    #     if args.y > 1:
-    #         dcfs[args.t] = historical_DCF(args.t, args.y, args.p, args.eg, args.cg, args.pgr)
-    #     else:
-    #         dcfs[args.t] = DCF(args.t, args.p, args.eg, args.cg, args.pgr)
-    # else:
-    #     raise ValueError('A ticker or list of tickers must be specified with '
-    #                     '--ticker or --tickers')
-    return NotImplementedError
+    # Validate all parameters early (fail fast principle)
+    validation_service.validate_all_parameters(args)
+
+    # Run application
+    app = ApplicationService(args)
+    app.run(validation_service, args)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--p", "--period", help="years to forecast", type=int, default=5)
-    parser.add_argument(
-        "--t",
-        "--ticker",
-        help="pass a single ticker to do historical DCF",
-        type=str,
-        default="AAPL",
-    )
-    parser.add_argument(
-        "--y", "--years", help="number of years to compute DCF analysis for", type=int, default=1
-    )
-    parser.add_argument(
-        "--i",
-        "--interval",
-        help='interval period for each calc, either "annual" or "quarter"',
-        default="annual",
-    )
-    parser.add_argument(
-        "--s",
-        "--step_increase",
-        help="specify step increase for EG, CG, PG to enable comparisons.",
-        type=float,
-        default=0,
-    )
-    parser.add_argument("--steps", help="steps to take if --s is > 0", default=5)
-    parser.add_argument(
-        "--v",
-        "--variable",
-        help="if --step_increase is specified, must specifiy variable to increase from: "
-        "[earnings_growth_rate, discount_rate]",
-        default=None,
-    )
-    parser.add_argument(
-        "--d",
-        "--discount_rate",
-        help="discount rate for future cash flow to firm",
-        type=float,
-        default=0.1,
-    )
-    parser.add_argument(
-        "--eg", "--earnings_growth_rate", help="growth in revenue, YoY", type=float, default=0.05
-    )
-    parser.add_argument(
-        "--cg", "--cap_ex_growth_rate", help="growth in cap_ex, YoY", type=float, default=0.045
-    )
-    parser.add_argument(
-        "--pg",
-        "--perpetual_growth_rate",
-        help="for perpetuity growth terminal value",
-        type=float,
-        default=0.05,
-    )
-    parser.add_argument(
-        "--apikey", help="API key for financialmodelingprep.com", default=os.environ.get("APIKEY")
-    )
-
-    args = parser.parse_args()
-    main(args)
+    main()
