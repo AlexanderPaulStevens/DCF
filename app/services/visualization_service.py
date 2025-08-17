@@ -1,7 +1,11 @@
 """
-Visualization service for DCF analysis results.
+Visualization service for financial forecasting application.
+
+This module handles the creation of comprehensive financial visualizations including
+DCF dashboards, sensitivity analysis charts, and terminal-style outputs.
 """
 
+import logging
 import os
 from datetime import datetime
 
@@ -13,6 +17,9 @@ import seaborn as sns
 from app.config import config
 from app.custom_types import DCFResult, DCFResults, VisualizationData
 from app.exceptions import VisualizationError
+
+# Configure logging for this module
+logger = logging.getLogger(__name__)
 
 
 class VisualizationService:
@@ -41,26 +48,22 @@ class VisualizationService:
         Raises:
             VisualizationError: If visualization generation fails
         """
-        print("\n" + "=" * 60)
-        print("Generating Enhanced Visualizations...")
-        print("=" * 60)
-
-        if not dcf_results or ticker not in dcf_results or not dcf_results[ticker]:
-            print("Warning: No DCF results available for visualization")
-            return
+        logger.info(f"\n{'=' * 60}")
+        logger.info("Generating Enhanced Visualizations...")
+        logger.info("=" * 60)
 
         try:
             # Create visualizations
             self.create_comprehensive_visualization(ticker, dcf_results[ticker], forecast_years)
             self.create_terminal_style_output(ticker, dcf_results[ticker], forecast_years)
 
-            print("Visualizations created successfully!")
-            print("Check the 'app/imgs/' directory for generated charts:")
-            print(f"   - {ticker}_comprehensive_dcf.png (Main dashboard)")
-            print("   - terminal_output.png (Terminal-style output)")
+            logger.info("Visualizations created successfully!")
+            logger.info("Check the 'app/imgs/' directory for generated charts:")
+            logger.info(f"   - {ticker}_comprehensive_dcf.png (Main dashboard)")
+            logger.info("   - terminal_output.png (Terminal-style output)")
 
         except Exception as e:
-            print(f"Visualization error: {e}")
+            logger.error(f"Visualization error: {e}")
             raise VisualizationError(f"Failed to generate visualizations: {e}") from e
 
     def create_comprehensive_visualization(

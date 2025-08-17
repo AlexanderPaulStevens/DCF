@@ -5,6 +5,7 @@ NOTE: Some code taken directly from their documentation. See: https://financialm
 """
 
 import json
+import logging
 import traceback
 from typing import Dict, List, Optional
 from urllib.request import URLError, urlopen
@@ -20,24 +21,27 @@ from app.custom_types import (
 from app.exceptions import APIError, DataFetchError, InvalidParameterError
 from app.services.cache_service import CacheService
 
+# Configure logging for this module
+logger = logging.getLogger(__name__)
+
 
 class FinancialDataFetcher:
     """Handles fetching financial data from the API with caching."""
 
-    def __init__(self, api_key: Optional[str] = None, use_cache: bool = True) -> None:
+    def __init__(self, api_key: Optional[str] = None, caching: bool = True) -> None:
         """
         Initialize the data fetcher.
 
         Args:
             api_key: API key for financial data services
-            use_cache: Whether to use caching (default: True)
+            caching: Whether to enable caching (default: True)
         """
         self.api_key = api_key or config.api.api_key
         if not self.api_key:
             raise InvalidParameterError("API key is required")
 
-        self.use_cache = use_cache
-        self.cache_service = CacheService() if use_cache else None
+        self.caching = caching
+        self.cache_service = CacheService() if caching else None
 
     def _build_url(self, endpoint: str, ticker: str, period: str = "annual") -> str:
         """Build API URL for the given endpoint and parameters."""
@@ -49,6 +53,38 @@ class FinancialDataFetcher:
             return f"{base_url}/{endpoint}/{ticker}?apikey={self.api_key}"
         else:
             return f"{base_url}/{endpoint}/{ticker}?period=quarter&apikey={self.api_key}"
+
+    def _validate_financial_data(self, data: APIResponse, data_type: str) -> None:
+        """
+        Validate financial data for quality and completeness.
+
+        Args:
+            data: Financial data to validate
+            data_type: Type of financial data being validated
+
+        Raises:
+            DataFetchError: If data validation fails
+        """
+        if not data:
+            raise DataFetchError(f"Empty data received for {data_type}")
+
+        # Check for common API error responses
+        if isinstance(data, dict):
+            if "Error Message" in data:
+                raise APIError(f"API Error for {data_type}: {data['Error Message']}")
+            if "Note" in data and "limit" in data["Note"].lower():
+                raise APIError(f"API rate limit exceeded for {data_type}")
+
+        # Validate data structure based on type
+        if data_type in [
+            "financials/income-statement",
+            "financials/cash-flow-statement",
+            "financials/balance-sheet-statement",
+        ]:
+            if "financials" not in data:
+                raise DataFetchError(f"Missing 'financials' key in {data_type} response")
+            if not data["financials"]:
+                raise DataFetchError(f"Empty financials data for {data_type}")
 
     def _fetch_json_data(self, url: str) -> APIResponse:
         """Fetch and parse JSON data from the given URL."""
@@ -63,13 +99,15 @@ class FinancialDataFetcher:
                 error_msg += f": {e.read().decode()}"
             except AttributeError:
                 pass
+            logger.error(error_msg)
             raise DataFetchError(error_msg) from e
 
         try:
             data = response.read().decode("utf-8")
             json_data = json.loads(data)
         except json.JSONDecodeError as e:
-            raise DataFetchError(f"JSON decode error for {url}: {e}") from e
+            logger.error(f"JSON decode error for {url}: {e}")
+            raise DataFetchError(f"JSON decode error for {url}: {e}")
 
         if "Error Message" in json_data:
             raise APIError(f"API Error for '{url}': {json_data['Error Message']}")
@@ -90,24 +128,27 @@ class FinancialDataFetcher:
         Returns:
             Financial data from cache or API
         """
-        if self.use_cache and self.cache_service:
+        if self.caching and self.cache_service:
             # Try to load from cache first
             cached_data = self.cache_service.load_data(ticker, data_type, period)
             if cached_data is not None:
-                print(f"Using cached data for {ticker} {data_type}")
+                logger.info(f"Using cached data for {ticker} {data_type}")
                 return cached_data
 
-        # Fetch from API
+        # Fetch from API (caching disabled doesn't prevent API calls)
         url = self._build_url(data_type, ticker, period)
         data = self._fetch_json_data(url)
 
+        # Validate the fetched data
+        self._validate_financial_data(data, data_type)
+
         # Save to cache if caching is enabled
-        if self.use_cache and self.cache_service:
+        if self.caching and self.cache_service:
             try:
                 self.cache_service.save_data(ticker, data_type, data, period)
-                print(f"Cached data for {ticker} {data_type}")
+                logger.info(f"Cached data for {ticker} {data_type}")
             except (OSError, IOError, ValueError, TypeError) as e:
-                print(f"Warning: Failed to cache data for {ticker}: {e}")
+                logger.warning(f"Failed to cache data for {ticker}: {e}")
 
         return data
 
@@ -137,7 +178,16 @@ class FinancialDataFetcher:
         """Fetch current stock price."""
         url = f"{config.api.base_url}/stock/real-time-price/{ticker}?apikey={self.api_key}"
         data = self._fetch_json_data(url)
-        return {"symbol": ticker, "price": data["price"]}
+
+        # Validate stock price data
+        if "price" not in data:
+            raise DataFetchError(f"Missing price data for {ticker}")
+
+        price = data["price"]
+        if not isinstance(price, (int, float)) or price <= 0:
+            raise DataFetchError(f"Invalid price value for {ticker}: {price}")
+
+        return {"symbol": ticker, "price": price}
 
     def get_batch_stock_prices(self, tickers: List[str]) -> Dict[str, float]:
         """Fetch stock prices for multiple tickers."""
@@ -147,10 +197,10 @@ class FinancialDataFetcher:
                 price_data = self.get_stock_price(ticker)
                 prices[ticker] = price_data["price"]
             except (APIError, DataFetchError) as e:
-                print(f"Error fetching price for {ticker}: {e}")
+                logger.error(f"Error fetching price for {ticker}: {e}")
                 continue
             except (ValueError, TypeError, AttributeError) as e:
-                print(f"Unexpected error fetching price for {ticker}: {e}")
+                logger.error(f"Unexpected error fetching price for {ticker}: {e}")
                 continue
         return prices
 
@@ -169,17 +219,28 @@ class FinancialDataFetcher:
                 )
 
                 data = self._fetch_json_data(url)
-                prices[date_end] = data["historical"][0]["close"]
+
+                # Validate historical price data
+                if "historical" not in data or not data["historical"]:
+                    logger.warning(f"No historical data available for {ticker} on {date_end}")
+                    continue
+
+                close_price = data["historical"][0]["close"]
+                if not isinstance(close_price, (int, float)) or close_price <= 0:
+                    logger.warning(f"Invalid close price for {ticker} on {date_end}: {close_price}")
+                    continue
+
+                prices[date_end] = close_price
 
             except (ValueError, IndexError) as e:
-                print(f"Error parsing date '{date}': {e}")
-                print(traceback.format_exc())
+                logger.error(f"Error parsing date '{date}': {e}")
+                logger.debug(traceback.format_exc())
                 continue
             except (APIError, DataFetchError) as e:
-                print(f"Error fetching historical price for {date}: {e}")
+                logger.error(f"Error fetching historical price for {date}: {e}")
                 continue
             except (ValueError, TypeError, AttributeError) as e:
-                print(f"Unexpected error fetching historical price for {date}: {e}")
+                logger.error(f"Unexpected error fetching historical price for {date}: {e}")
                 continue
 
         return prices
@@ -223,25 +284,25 @@ def get_jsonparsed_data(url: str) -> APIResponse:
 def get_ev_statement(ticker: str, period: str = "annual", apikey: str = "") -> APIResponse:
     """Legacy function - use FinancialDataFetcher instead."""
     fetcher = FinancialDataFetcher(apikey)
-    return fetcher.get_enterprise_value_statement(ticker, period).data
+    return fetcher.get_enterprise_value_statement(ticker, period)["data"]
 
 
 def get_income_statement(ticker: str, period: str = "annual", apikey: str = "") -> APIResponse:
     """Legacy function - use FinancialDataFetcher instead."""
     fetcher = FinancialDataFetcher(apikey)
-    return {"financials": fetcher.get_income_statement(ticker, period).data}
+    return {"financials": fetcher.get_income_statement(ticker, period)["data"]}
 
 
 def get_cashflow_statement(ticker: str, period: str = "annual", apikey: str = "") -> APIResponse:
     """Legacy function - use FinancialDataFetcher instead."""
     fetcher = FinancialDataFetcher(apikey)
-    return {"financials": fetcher.get_cashflow_statement(ticker, period).data}
+    return {"financials": fetcher.get_cashflow_statement(ticker, period)["data"]}
 
 
 def get_balance_statement(ticker: str, period: str = "annual", apikey: str = "") -> APIResponse:
     """Legacy function - use FinancialDataFetcher instead."""
     fetcher = FinancialDataFetcher(apikey)
-    return {"financials": fetcher.get_balance_statement(ticker, period).data}
+    return {"financials": fetcher.get_balance_statement(ticker, period)["data"]}
 
 
 def get_stock_price(ticker: str, apikey: str = "") -> Dict[str, float]:
@@ -266,12 +327,17 @@ def get_historical_share_prices(
 
 if __name__ == "__main__":
     """Quick test - run data.py directly."""
+    # Configure logging for standalone execution
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+
     try:
         fetcher = FinancialDataFetcher()
         data = fetcher.get_cashflow_statement("AAPL")
-        print("Successfully fetched cash flow statement for AAPL")
-        print(f"Number of periods: {len(data.data)}")
+        logger.info("Successfully fetched cash flow statement for AAPL")
+        logger.info(f"Number of periods: {len(data['data'])}")
     except (APIError, DataFetchError) as e:
-        print(f"API Error: {e}")
+        logger.error(f"API Error: {e}")
     except (ValueError, TypeError, AttributeError) as e:
-        print(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error: {e}")

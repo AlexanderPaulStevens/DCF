@@ -1,29 +1,46 @@
 """
-Quick visualization toolkit. I'd like to build this out to be decently powerful
-in terms of enabling quick interpretation of DCF related data.
+Plotting utilities for DCF analysis visualization.
+
+This module provides functions for creating various types of plots comparing
+DCF-forecasted share prices with historical share prices.
 """
 
+import logging
 import sys
+from typing import Any, Dict
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-sys.path.append("..")
 from app.modeling.data import get_historical_share_prices
 
-sns.set()
-sns.set_context("paper")
+# Configure logging for this module
+logger = logging.getLogger(__name__)
+
+# Set modern seaborn theme (replaces deprecated sns.set())
+sns.set_theme(style="whitegrid", font_scale=1.0)
+
+# Add parent directory to path for imports
+sys.path.append("..")
 
 
-def visualize(dcf_prices: dict, ticker: str, condition: dict, apikey: str) -> None:
+def visualize(
+    dcf_prices: Dict[str, Any], ticker: str, condition: Dict[str, Any], apikey: str
+) -> None:
     """
     2d plot comparing dcf-forecasted per share price with historical share price.
+
+    Args:
+        dcf_prices: Dictionary containing DCF price data
+        ticker: Company ticker symbol
+        condition: Dictionary containing condition parameters
+        apikey: API key for financial data services
     """
     dcf_share_prices = {}
     try:
         conditions = [str(cond) for cond in next(iter(condition.values()))]
     except IndexError:
-        print(condition)
+        logger.error(f"Invalid condition format: {condition}")
         return
     for cond in conditions:
         dcf_share_prices[cond] = {k: v["share_price"] for k, v in dcf_prices.items()}
@@ -48,21 +65,23 @@ def visualize(dcf_prices: dict, ticker: str, condition: dict, apikey: str) -> No
     plt.show()
 
 
-def visualize_bulk_historicals(dcfs: dict, ticker: str, condition: dict, apikey: str) -> None:
+def visualize_bulk_historicals(
+    dcfs: Dict[str, Any], ticker: str, condition: Dict[str, Any], apikey: str
+) -> None:
     """
-    multiple 2d plot comparing historical DCFS of different growth
-    assumption conditions
+    Multiple 2d plot comparing historical DCFs of different growth assumption conditions.
 
-    args:
-        dcfs: list of dcfs of format {'value1', {'year1': dcf}, ...}
-        condition: dict of format {'condition': [value1, value2, value3]}
-
+    Args:
+        dcfs: List of DCFs of format {'value1': {'year1': dcf}, ...}
+        condition: Dict of format {'condition': [value1, value2, value3]}
+        ticker: Company ticker symbol
+        apikey: API key for financial data services
     """
     dcf_share_prices = {}
     try:
         conditions = [str(cond) for cond in next(iter(condition.values()))]
     except IndexError:
-        print(condition)
+        logger.error(f"Invalid condition format: {condition}")
         conditions = [condition["Ticker"]]
 
     for cond in conditions:
@@ -80,7 +99,7 @@ def visualize_bulk_historicals(dcfs: dict, ticker: str, condition: dict, apikey:
 
     # sorry for anybody reading this, bit too pythonic
     # the second argument here just fetches the list of dates we're using as x values
-    # in the above plt.plot() call without knowing the conditions we index with abo
+    # in the above plt.plot() call without knowing the conditions we index with above
     historical_stock_prices = get_historical_share_prices(
         ticker=ticker,
         dates=list(dcf_share_prices[next(iter(dcf_share_prices.keys()))].keys())[::-1],
@@ -100,11 +119,13 @@ def visualize_bulk_historicals(dcfs: dict, ticker: str, condition: dict, apikey:
     plt.show()
 
 
-def visualize_historicals(dcfs: dict) -> None:
+def visualize_historicals(dcfs: Dict[str, Any]) -> None:
     """
-    2d plot comparing dcf history to share price history
-    """
+    2d plot comparing dcf history to share price history.
 
+    Args:
+        dcfs: Dictionary containing DCF historical data
+    """
     dcf_share_prices = {}
     for k, v in dcfs.items():
         dcf_share_prices[dcfs[k]["date"]] = v["share_price"]

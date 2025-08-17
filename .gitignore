@@ -13,3 +13,9 @@ _config.yml
 
 # extra
 .extra/
+
+app/cache
+
+app/imgs
+
+.cursorrules

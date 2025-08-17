@@ -1,7 +1,50 @@
 """
 DCF calculation service layer.
+
+This module provides the core DCF (Discounted Cash Flow) calculation logic for
+valuing companies based on their projected future cash flows.
+
+DCF Calculation Methodology:
+===========================
+
+1. **Free Cash Flow Calculation**:
+   - Operating Income + Depreciation - Taxes - CapEx - Working Capital Changes
+   - Represents cash available to all capital providers
+
+2. **Cash Flow Projection**:
+   - Project future FCF based on growth assumptions
+   - Apply growth rates to earnings and capital expenditures
+   - Account for working capital changes
+
+3. **Terminal Value Calculation**:
+   - Use Gordon Growth Model: FCF_n+1 / (Discount Rate - Growth Rate)
+   - Assumes perpetual growth at a sustainable rate
+
+4. **Valuation**:
+   - Enterprise Value = Present Value of Projected FCF + Terminal Value
+   - Equity Value = Enterprise Value - Net Debt
+   - Per Share Value = Equity Value / Shares Outstanding
+
+Key Assumptions:
+----------------
+- **Growth Rates**: Assumed rates for earnings and capital expenditures
+- **Discount Rate**: Required return or cost of capital
+- **Terminal Growth**: Long-term sustainable growth rate
+
+Mathematical Foundation:
+------------------------
+The DCF formula is:
+EV = Σ(FCF_t / (1 + r)^t) + TV / (1 + r)^n
+
+Where:
+- EV = Enterprise Value
+- FCF_t = Free Cash Flow in year t
+- r = Discount rate
+- TV = Terminal Value
+- n = Number of forecast years
 """
 
+import logging
 import traceback
 from decimal import Decimal
 from typing import Dict, Optional, Tuple
@@ -10,19 +53,22 @@ from app.custom_types import DCFParameters, DCFResult, DCFResults
 from app.exceptions import APIError, DataFetchError, DCFCalculationError
 from app.modeling.data import FinancialDataFetcher
 
+# Configure logging for this module
+logger = logging.getLogger(__name__)
+
 
 class DCFService:
     """Service for handling DCF calculations."""
 
-    def __init__(self, api_key: Optional[str] = None, use_cache: bool = True) -> None:
+    def __init__(self, api_key: Optional[str] = None, caching: bool = True) -> None:
         """
         Initialize the DCF service.
 
         Args:
             api_key: Optional API key for financial data services
-            use_cache: Whether to use caching (default: True)
+            caching: Whether to enable caching (default: True)
         """
-        self.data_fetcher = FinancialDataFetcher(api_key, use_cache)
+        self.data_fetcher = FinancialDataFetcher(api_key, caching)
 
     def calculate_dcf(
         self,
@@ -61,9 +107,9 @@ class DCFService:
 
             # Calculate enterprise value
             enterprise_val = self._calculate_enterprise_value(
-                income_statement.data[0:2],
-                cashflow_statement.data[0:2],
-                balance_statement.data[0:2],
+                income_statement["data"][0:2],
+                cashflow_statement["data"][0:2],
+                balance_statement["data"][0:2],
                 forecast_years,
                 discount_rate,
                 earnings_growth_rate,
@@ -73,14 +119,14 @@ class DCFService:
 
             # Calculate equity value and share price
             equity_val, share_price = self._calculate_equity_value(
-                enterprise_val, ev_statement.data[0]
+                enterprise_val, ev_statement["data"][0]
             )
 
             # Print results
             self._print_dcf_results(ticker, enterprise_val, equity_val, share_price)
 
             return DCFResult(
-                date=income_statement.data[0]["date"],
+                date=income_statement["data"][0]["date"],
                 enterprise_value=enterprise_val,
                 equity_value=equity_val,
                 share_price=share_price,
@@ -130,13 +176,13 @@ class DCFService:
                 dcfs[dcf_result.date] = dcf_result
 
             except (DCFCalculationError, APIError, DataFetchError) as e:
-                print(f"Calculation error for interval {interval_idx}: {e}")
-                print(traceback.format_exc())
+                logger.error(f"Calculation error for interval {interval_idx}: {e}")
+                logger.debug(traceback.format_exc())
             except (ValueError, TypeError, AttributeError) as e:
-                print(f"Unexpected error for interval {interval_idx}: {e}")
-                print(traceback.format_exc())
+                logger.error(f"Unexpected error for interval {interval_idx}: {e}")
+                logger.debug(traceback.format_exc())
             finally:
-                print("-" * 60)
+                logger.debug("-" * 60)
 
         return dcfs
 
@@ -279,11 +325,9 @@ class DCFService:
             equity_val: Calculated equity value
             share_price: Calculated share price
         """
-        print(
-            f"\nEnterprise Value for {ticker}: ${'%.2E' % Decimal(str(enterprise_val))}.",
-            f"\nEquity Value for {ticker}: ${'%.2E' % Decimal(str(equity_val))}.",
-            f"\nPer share value for {ticker}: ${'%.2E' % Decimal(str(share_price))}.\n",
-        )
+        logger.info(f"\nEnterprise Value for {ticker}: ${'%.2E' % Decimal(str(enterprise_val))}.")
+        logger.info(f"\nEquity Value for {ticker}: ${'%.2E' % Decimal(str(equity_val))}.")
+        logger.info(f"\nPer share value for {ticker}: ${'%.2E' % Decimal(str(share_price))}.\n")
 
 
 # Legacy function for backward compatibility

@@ -41,7 +41,9 @@ class CacheService:
         Returns:
             Cache key string
         """
-        return f"{ticker}_{data_type}_{period}.json"
+        # Replace slashes with underscores to avoid directory structure issues
+        safe_data_type = data_type.replace("/", "_")
+        return f"{ticker}_{safe_data_type}_{period}.json"
 
     def get_cache_path(self, cache_key: str) -> Path:
         """
