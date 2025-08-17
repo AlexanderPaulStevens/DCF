@@ -45,12 +45,11 @@ Where:
 """
 
 import logging
-import traceback
 from decimal import Decimal
 from typing import Dict, Optional, Tuple
 
 from app.custom_types import DCFParameters, DCFResult, DCFResults
-from app.exceptions import APIError, DataFetchError, DCFCalculationError
+from app.exceptions import DCFCalculationError
 from app.modeling.data import FinancialDataFetcher
 
 # Configure logging for this module
@@ -153,37 +152,23 @@ class DCFService:
         # Determine number of intervals
         intervals = params.years * (4 if params.interval == "quarter" else 1)
 
-        # Fetch all financial data upfront
-        try:
-            self.data_fetcher.get_enterprise_value_statement(params.ticker, params.interval)
-            self.data_fetcher.get_income_statement(params.ticker, params.interval)
-            self.data_fetcher.get_balance_statement(params.ticker, params.interval)
-            self.data_fetcher.get_cashflow_statement(params.ticker, params.interval)
-        except Exception as e:
-            raise DCFCalculationError(f"Failed to fetch financial data: {e}") from e
+        # Fetch all financial
+        self.data_fetcher.get_enterprise_value_statement(params.ticker, params.interval)
+        self.data_fetcher.get_income_statement(params.ticker, params.interval)
+        self.data_fetcher.get_balance_statement(params.ticker, params.interval)
+        self.data_fetcher.get_cashflow_statement(params.ticker, params.interval)
 
-        for interval_idx in range(intervals):
-            try:
-                dcf_result = self.calculate_dcf(
-                    params.ticker,
-                    params.forecast_years,
-                    params.discount_rate,
-                    params.earnings_growth_rate,
-                    params.cap_ex_growth_rate,
-                    params.perpetual_growth_rate,
-                    params.interval,
-                )
-                dcfs[dcf_result.date] = dcf_result
-
-            except (DCFCalculationError, APIError, DataFetchError) as e:
-                logger.error(f"Calculation error for interval {interval_idx}: {e}")
-                logger.debug(traceback.format_exc())
-            except (ValueError, TypeError, AttributeError) as e:
-                logger.error(f"Unexpected error for interval {interval_idx}: {e}")
-                logger.debug(traceback.format_exc())
-            finally:
-                logger.debug("-" * 60)
-
+        for _ in range(intervals):
+            dcf_result = self.calculate_dcf(
+                params.ticker,
+                params.forecast_years,
+                params.discount_rate,
+                params.earnings_growth_rate,
+                params.cap_ex_growth_rate,
+                params.perpetual_growth_rate,
+                params.interval,
+            )
+            dcfs[dcf_result.date] = dcf_result
         return dcfs
 
     def _calculate_enterprise_value(

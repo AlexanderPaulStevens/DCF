@@ -12,7 +12,7 @@ _config.yml
 .ruff_cache/
 
 # extra
-.extra/
+extra/
 
 app/cache
 
