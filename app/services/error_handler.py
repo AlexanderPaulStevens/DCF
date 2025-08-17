@@ -7,7 +7,7 @@ components, ensuring consistent error reporting and debugging information.
 
 import logging
 import traceback
-from typing import Callable, Optional, TypeVar
+from typing import Any, Callable, Dict, Optional, TypeVar
 
 from app.exceptions import (
     APIError,
@@ -32,6 +32,8 @@ class ErrorHandler:
         """Initialize the error handler."""
         self.error_count = 0
         self.warning_count = 0
+        self.error_contexts: Dict[str, int] = {}
+        self.last_error: Optional[Exception] = None
 
     def handle_api_error(self, error: APIError, context: str = "") -> None:
         """
@@ -42,12 +44,18 @@ class ErrorHandler:
             context: Additional context about where the error occurred
         """
         self.error_count += 1
+        self.last_error = error
         context_msg = f" in {context}" if context else ""
+
         logger.error(f"API error{context_msg}: {error}")
+        self._track_error_context("API", context)
 
         # Log additional context for debugging
         if hasattr(error, "__cause__") and error.__cause__:
             logger.debug(f"API error cause: {error.__cause__}")
+
+        # Log stack trace for debugging
+        logger.debug(f"API error stack trace: {traceback.format_exc()}")
 
     def handle_data_error(self, error: DataFetchError, context: str = "") -> None:
         """
@@ -58,12 +66,18 @@ class ErrorHandler:
             context: Additional context about where the error occurred
         """
         self.error_count += 1
+        self.last_error = error
         context_msg = f" in {context}" if context else ""
+
         logger.error(f"Data fetching error{context_msg}: {error}")
+        self._track_error_context("Data", context)
 
         # Log additional context for debugging
         if hasattr(error, "__cause__") and error.__cause__:
             logger.debug(f"Data error cause: {error.__cause__}")
+
+        # Log stack trace for debugging
+        logger.debug(f"Data error stack trace: {traceback.format_exc()}")
 
     def handle_validation_error(self, error: InvalidParameterError, context: str = "") -> None:
         """
@@ -74,12 +88,18 @@ class ErrorHandler:
             context: Additional context about where the error occurred
         """
         self.error_count += 1
+        self.last_error = error
         context_msg = f" in {context}" if context else ""
+
         logger.error(f"Validation error{context_msg}: {error}")
+        self._track_error_context("Validation", context)
 
         # Log additional context for debugging
         if hasattr(error, "__cause__") and error.__cause__:
             logger.debug(f"Validation error cause: {error.__cause__}")
+
+        # Log stack trace for debugging
+        logger.debug(f"Validation error stack trace: {traceback.format_exc()}")
 
     def handle_dcf_error(self, error: DCFCalculationError, context: str = "") -> None:
         """
@@ -90,12 +110,18 @@ class ErrorHandler:
             context: Additional context about where the error occurred
         """
         self.error_count += 1
+        self.last_error = error
         context_msg = f" in {context}" if context else ""
+
         logger.error(f"DCF calculation error{context_msg}: {error}")
+        self._track_error_context("DCF", context)
 
         # Log additional context for debugging
         if hasattr(error, "__cause__") and error.__cause__:
             logger.debug(f"DCF error cause: {error.__cause__}")
+
+        # Log stack trace for debugging
+        logger.debug(f"DCF error stack trace: {traceback.format_exc()}")
 
     def handle_visualization_error(self, error: VisualizationError, context: str = "") -> None:
         """
@@ -106,12 +132,18 @@ class ErrorHandler:
             context: Additional context about where the error occurred
         """
         self.error_count += 1
+        self.last_error = error
         context_msg = f" in {context}" if context else ""
+
         logger.error(f"Visualization error{context_msg}: {error}")
+        self._track_error_context("Visualization", context)
 
         # Log additional context for debugging
         if hasattr(error, "__cause__") and error.__cause__:
             logger.debug(f"Visualization error cause: {error.__cause__}")
+
+        # Log stack trace for debugging
+        logger.debug(f"Visualization error stack trace: {traceback.format_exc()}")
 
     def handle_configuration_error(self, error: ConfigurationError, context: str = "") -> None:
         """
@@ -122,12 +154,18 @@ class ErrorHandler:
             context: Additional context about where the error occurred
         """
         self.error_count += 1
+        self.last_error = error
         context_msg = f" in {context}" if context else ""
+
         logger.error(f"Configuration error{context_msg}: {error}")
+        self._track_error_context("Configuration", context)
 
         # Log additional context for debugging
         if hasattr(error, "__cause__") and error.__cause__:
             logger.debug(f"Configuration error cause: {error.__cause__}")
+
+        # Log stack trace for debugging
+        logger.debug(f"Configuration error stack trace: {traceback.format_exc()}")
 
     def handle_unexpected_error(self, error: Exception, context: str = "") -> None:
         """
@@ -138,9 +176,29 @@ class ErrorHandler:
             context: Additional context about where the error occurred
         """
         self.error_count += 1
+        self.last_error = error
         context_msg = f" in {context}" if context else ""
+
         logger.error(f"Unexpected error{context_msg}: {error}")
+        self._track_error_context("Unexpected", context)
+
+        # Log detailed error information
+        logger.debug(f"Unexpected error type: {type(error).__name__}")
         logger.debug(f"Unexpected error traceback: {traceback.format_exc()}")
+
+    def handle_warning(self, message: str, context: str = "") -> None:
+        """
+        Handle warnings with appropriate logging.
+
+        Args:
+            message: Warning message
+            context: Additional context about where the warning occurred
+        """
+        self.warning_count += 1
+        context_msg = f" in {context}" if context else ""
+
+        logger.warning(f"Warning{context_msg}: {message}")
+        self._track_error_context("Warning", context)
 
     def safe_execute(
         self, func: Callable[..., T], *args: object, context: str = "", **kwargs: object
@@ -173,23 +231,70 @@ class ErrorHandler:
             self.handle_configuration_error(e, context)
         except (ValueError, TypeError, AttributeError, RuntimeError) as e:
             self.handle_unexpected_error(e, context)
+        except (OSError, ImportError, MemoryError) as e:
+            # Catch specific system-level errors
+            logger.error(f"System error {type(e).__name__} in {context}: {e}")
+            self.handle_unexpected_error(e, context)
 
         return None
 
-    def get_error_summary(self) -> dict:
+    def _track_error_context(self, error_type: str, context: str) -> None:
         """
-        Get a summary of errors and warnings encountered.
+        Track error context for analysis and reporting.
+
+        Args:
+            error_type: Type of error that occurred
+            context: Context where the error occurred
+        """
+        context_key = f"{error_type}:{context}" if context else error_type
+        self.error_contexts[context_key] = self.error_contexts.get(context_key, 0) + 1
+
+    def get_error_summary(self) -> Dict[str, Any]:
+        """
+        Get a comprehensive summary of errors and warnings encountered.
 
         Returns:
-            Dictionary with error and warning counts
+            Dictionary with detailed error and warning information
         """
         return {
             "error_count": self.error_count,
             "warning_count": self.warning_count,
             "total_issues": self.error_count + self.warning_count,
+            "error_contexts": self.error_contexts.copy(),
+            "last_error": str(self.last_error) if self.last_error else None,
+            "last_error_type": type(self.last_error).__name__ if self.last_error else None,
         }
 
     def reset_counts(self) -> None:
-        """Reset error and warning counts."""
+        """Reset error and warning counts and clear error tracking."""
         self.error_count = 0
         self.warning_count = 0
+        self.error_contexts.clear()
+        self.last_error = None
+
+    def has_errors(self) -> bool:
+        """
+        Check if any errors have occurred.
+
+        Returns:
+            True if errors exist, False otherwise
+        """
+        return self.error_count > 0
+
+    def has_warnings(self) -> bool:
+        """
+        Check if any warnings have occurred.
+
+        Returns:
+            True if warnings exist, False otherwise
+        """
+        return self.warning_count > 0
+
+    def get_error_context_summary(self) -> Dict[str, int]:
+        """
+        Get a summary of errors by context.
+
+        Returns:
+            Dictionary mapping error contexts to their counts
+        """
+        return self.error_contexts.copy()

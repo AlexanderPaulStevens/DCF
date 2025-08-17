@@ -17,6 +17,7 @@ import seaborn as sns
 from app.config import config
 from app.custom_types import DCFResult, DCFResults, VisualizationData
 from app.exceptions import VisualizationError
+from app.services.error_handler import ErrorHandler
 
 # Configure logging for this module
 logger = logging.getLogger(__name__)
@@ -27,12 +28,50 @@ class VisualizationService:
 
     def __init__(self) -> None:
         """Initialize the visualization service."""
+        self.error_handler = ErrorHandler()
         self._setup_plotting_style()
 
     def _setup_plotting_style(self) -> None:
         """Set up the plotting style and configuration."""
-        plt.style.use(config.visualization.style)
-        sns.set_palette(config.visualization.color_palette)
+        try:
+            plt.style.use(config.visualization.style)
+            sns.set_palette(config.visualization.color_palette)
+        except (ValueError, OSError, RuntimeError) as e:
+            logger.warning(f"Failed to set plotting style: {e}")
+            # Fallback to default style
+            plt.style.use("default")
+
+    def display_results(self, ticker: str, dcfs: DCFResults) -> None:
+        """
+        Display DCF calculation results in the terminal.
+
+        Args:
+            ticker: Company ticker symbol
+            dcfs: DCF calculation results
+
+        Raises:
+            VisualizationError: If display fails
+        """
+        try:
+            if not dcfs:
+                logger.warning(f"No DCF results to display for {ticker}")
+                return
+
+            # Get the most recent result
+            latest_date = max(dcfs.keys())
+            latest_result = dcfs[latest_date]
+
+            logger.info(f"\nDCF Results for {ticker} ({latest_date}):")
+            logger.info(f"Enterprise Value: ${latest_result.enterprise_value:,.2f}")
+            logger.info(f"Equity Value: ${latest_result.equity_value:,.2f}")
+            logger.info(f"Share Price: ${latest_result.share_price:.2f}")
+
+        except (ValueError, KeyError, AttributeError) as e:
+            error_msg = f"Error displaying results for {ticker}: {e}"
+            logger.error(error_msg)
+            self.error_handler.handle_visualization_error(
+                VisualizationError(error_msg), "display_results"
+            )
 
     def generate_enhanced_visualizations(
         self, ticker: str, dcf_results: DCFResults, forecast_years: int
@@ -63,8 +102,12 @@ class VisualizationService:
             logger.info("   - terminal_output.png (Terminal-style output)")
 
         except Exception as e:
-            logger.error(f"Visualization error: {e}")
-            raise VisualizationError(f"Failed to generate visualizations: {e}") from e
+            error_msg = f"Failed to generate visualizations: {e}"
+            logger.error(error_msg)
+            self.error_handler.handle_visualization_error(
+                VisualizationError(error_msg), "generate_enhanced_visualizations"
+            )
+            raise VisualizationError(error_msg) from e
 
     def create_comprehensive_visualization(
         self, ticker: str, dcf_results: DCFResults, forecast_years: int
@@ -110,7 +153,12 @@ class VisualizationService:
             return output_path
 
         except Exception as e:
-            raise VisualizationError(f"Failed to create comprehensive visualization: {e}") from e
+            error_msg = f"Failed to create comprehensive visualization: {e}"
+            logger.error(error_msg)
+            self.error_handler.handle_visualization_error(
+                VisualizationError(error_msg), "create_comprehensive_visualization"
+            )
+            raise VisualizationError(error_msg) from e
 
     def create_terminal_style_output(
         self, ticker: str, dcf_results: DCFResults, forecast_years: int
@@ -153,7 +201,12 @@ class VisualizationService:
             return output_path
 
         except Exception as e:
-            raise VisualizationError(f"Failed to create terminal-style output: {e}") from e
+            error_msg = f"Failed to create terminal-style output: {e}"
+            logger.error(error_msg)
+            self.error_handler.handle_visualization_error(
+                VisualizationError(error_msg), "create_terminal_style_output"
+            )
+            raise VisualizationError(error_msg) from e
 
     def _create_dashboard(self, viz_data: VisualizationData) -> None:
         """
@@ -162,18 +215,28 @@ class VisualizationService:
         Args:
             viz_data: Visualization data containing DCF results
         """
-        fig, axes = plt.subplots(2, 3, figsize=config.visualization.figure_size)
-        fig.suptitle(f"DCF Analysis Dashboard - {viz_data.ticker}", fontsize=16, fontweight="bold")
+        try:
+            fig, axes = plt.subplots(2, 3, figsize=config.visualization.figure_size)
+            fig.suptitle(
+                f"DCF Analysis Dashboard - {viz_data.ticker}", fontsize=16, fontweight="bold"
+            )
 
-        # Create each subplot
-        self._create_summary_dashboard(axes[0, 0], viz_data)
-        self._create_value_breakdown(axes[0, 1], viz_data)
-        self._create_cash_flow_projection(axes[0, 2], viz_data)
-        self._create_sensitivity_analysis(axes[1, 0], viz_data)
-        self._create_valuation_metrics(axes[1, 1], viz_data)
-        self._create_risk_assessment(axes[1, 2])
+            # Create each subplot
+            self._create_summary_dashboard(axes[0, 0], viz_data)
+            self._create_value_breakdown(axes[0, 1], viz_data)
+            self._create_cash_flow_projection(axes[0, 2], viz_data)
+            self._create_sensitivity_analysis(axes[1, 0], viz_data)
+            self._create_valuation_metrics(axes[1, 1], viz_data)
+            self._create_risk_assessment(axes[1, 2])
 
-        plt.tight_layout()
+            plt.tight_layout()
+        except Exception as e:
+            error_msg = f"Failed to create dashboard: {e}"
+            logger.error(error_msg)
+            self.error_handler.handle_visualization_error(
+                VisualizationError(error_msg), "_create_dashboard"
+            )
+            raise
 
     def _create_summary_dashboard(
         self, ax: matplotlib.axes.Axes, viz_data: VisualizationData
@@ -235,7 +298,7 @@ class VisualizationService:
         sizes = [viz_data.enterprise_value, debt_cash_adjustment, viz_data.equity_value]
         colors = ["#ff9999", "#66b3ff", "#99ff99"]
 
-        wedges, texts, autotexts = ax.pie(
+        _, _, autotexts = ax.pie(
             sizes, labels=labels, colors=colors, autopct="%1.1f%%", startangle=90
         )
 
@@ -416,12 +479,13 @@ class VisualizationService:
         Args:
             viz_data: Visualization data containing DCF results
         """
-        fig, ax = plt.subplots(figsize=(12, 8))
-        fig.patch.set_facecolor("black")
-        ax.set_facecolor("black")
+        try:
+            fig, ax = plt.subplots(figsize=(12, 8))
+            fig.patch.set_facecolor("black")
+            ax.set_facecolor("black")
 
-        # Terminal-style text
-        terminal_text = f"""
+            # Terminal-style text
+            terminal_text = f"""
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                           DCF ANALYSIS RESULTS                                ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
@@ -451,22 +515,29 @@ class VisualizationService:
 ║  Check the generated charts for detailed visualizations.                    ║
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
-        """
+            """
 
-        ax.text(
-            0.05,
-            0.95,
-            terminal_text,
-            transform=ax.transAxes,
-            fontsize=10,
-            fontfamily="monospace",
-            color="lime",
-            verticalalignment="top",
-        )
+            ax.text(
+                0.05,
+                0.95,
+                terminal_text,
+                transform=ax.transAxes,
+                fontsize=10,
+                fontfamily="monospace",
+                color="lime",
+                verticalalignment="top",
+            )
 
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        ax.axis("off")
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+            ax.axis("off")
+        except Exception as e:
+            error_msg = f"Failed to create terminal-style output: {e}"
+            logger.error(error_msg)
+            self.error_handler.handle_visualization_error(
+                VisualizationError(error_msg), "_create_terminal_output"
+            )
+            raise
 
     def _get_current_date(self) -> str:
         """

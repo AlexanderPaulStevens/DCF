@@ -72,8 +72,8 @@ class ApplicationService:
             # Normalize structure: wrap in ticker key for consistency with visualization service
             normalized_dcfs = {args.ticker: dcfs}
 
-            # Display results
-            self._display_results(args.ticker, dcfs)
+            # Display results using visualization service
+            self.viz_service.display_results(args.ticker, dcfs)
 
             return normalized_dcfs
 
@@ -124,12 +124,17 @@ class ApplicationService:
         return dcfs
 
     def _get_variable_value(self, args: argparse.Namespace, variable: SensitivityVariable) -> float:
-        """Get the current value of the specified variable from args."""
-        try:
-            value = getattr(args, variable.value)
-            return float(value)
-        except (AttributeError, ValueError, TypeError) as e:
-            raise ValueError(f"Invalid value for {variable.value}: {e}")
+        """
+        Get the base value for the specified variable from arguments.
+
+        Args:
+            args: Command line arguments
+            variable: Variable to get value for
+
+        Returns:
+            Base value for the variable
+        """
+        return getattr(args, variable.value, 0.0)
 
     def _create_step_label(self, variable: SensitivityVariable, value: float) -> str:
         """Create a descriptive step label."""
@@ -227,23 +232,3 @@ class ApplicationService:
         except Exception as e:
             self.error_handler.handle_unexpected_error(e, "main application execution")
             raise
-
-    def _display_results(self, ticker: str, dcfs: DCFResults) -> None:
-        """Display DCF calculation results."""
-        try:
-            if not dcfs:
-                logger.warning(f"No DCF results to display for {ticker}")
-                return
-
-            # Get the most recent result
-            latest_date = max(dcfs.keys())
-            latest_result = dcfs[latest_date]
-
-            logger.info(f"\nDCF Results for {ticker} ({latest_date}):")
-            logger.info(f"Enterprise Value: ${latest_result.enterprise_value:,.2f}")
-            logger.info(f"Equity Value: ${latest_result.equity_value:,.2f}")
-            logger.info(f"Share Price: ${latest_result.share_price:.2f}")
-
-        except (ValueError, KeyError, AttributeError) as e:
-            logger.error(f"Error displaying results: {e}")
-            # Don't raise - this is just display logic
