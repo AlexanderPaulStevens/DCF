@@ -67,6 +67,7 @@ class ApplicationService:
             else:
                 # Single analysis mode
                 dcfs = self.dcf_service.calculate_historical_dcf(params)
+                print("THE DCFS ARE: ", dcfs)
                 logger.info("Completed single DCF analysis")
 
             # Normalize structure: wrap in ticker key for consistency with visualization service
